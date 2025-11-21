@@ -14,6 +14,9 @@ namespace ItemChanger.Locations;
 /// </summary>
 public abstract class AutoLocation : Location
 {
+    /// <summary>
+    /// Builds the give-info descriptor used when this location awards items.
+    /// </summary>
     public virtual GiveInfo GetGiveInfo()
     {
         return new GiveInfo
@@ -21,15 +24,29 @@ public abstract class AutoLocation : Location
             FlingType = FlingType,
             Callback = null,
             Container = ContainerRegistry.UnknownContainerType,
-            MessageType = MessageType.Any,
+            MessageType = MessageTypes.Any,
         };
     }
 
+    /// <summary>
+    /// Gives every item using the default give info immediately.
+    /// </summary>
     public void GiveAll()
     {
         Placement!.GiveAll(GetGiveInfo());
     }
 
+    /// <summary>
+    /// Gives all items, invoking a callback after completion.
+    /// </summary>
+    public void GiveAll(Action callback)
+    {
+        Placement!.GiveAll(GetGiveInfo(), callback);
+    }
+
+    /// <summary>
+    /// Produces an asynchronous wrapper that gives all items after the provided callback completes.
+    /// </summary>
     public Action<Action> GiveAllAsync(Transform t)
     {
         GiveInfo gi = GetGiveInfo();
@@ -37,14 +54,15 @@ public abstract class AutoLocation : Location
         return (callback) => Placement!.GiveAll(gi, callback);
     }
 
-    public void GiveAll(Action callback)
-    {
-        Placement!.GiveAll(GetGiveInfo(), callback);
-    }
-
+    /// <summary>
+    /// Indicates whether this auto location can handle costs directly.
+    /// </summary>
     [JsonIgnore]
     public virtual bool SupportsCost => false;
 
+    /// <summary>
+    /// Wraps the auto location into an <see cref="AutoPlacement"/> so it can participate in placement workflows.
+    /// </summary>
     public override Placement Wrap()
     {
         return new AutoPlacement(Name)
