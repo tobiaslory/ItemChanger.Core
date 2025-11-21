@@ -1,9 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using ItemChanger.Containers;
+﻿using ItemChanger.Containers;
 using ItemChanger.Events;
 using ItemChanger.Logging;
 using ItemChanger.Modules;
+using System;
+using System.Collections.Generic;
 
 namespace ItemChanger;
 

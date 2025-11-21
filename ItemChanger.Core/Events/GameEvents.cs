@@ -1,13 +1,27 @@
-﻿using System;
-using System.Collections.Generic;
-using ItemChanger.Enums;
+﻿using ItemChanger.Enums;
 using ItemChanger.Events.Args;
+using System;
+using System.Collections.Generic;
+using UnityEngine.Events;
 using UnityEngine.SceneManagement;
 
 namespace ItemChanger.Events;
 
+/// <summary>
+/// Central dispatcher for scene and persistence events raised by ItemChanger.
+/// </summary>
 public sealed class GameEvents
 {
+    private readonly UnityAction<Scene, LoadSceneMode> sceneLoadedHandler;
+
+    /// <summary>
+    /// Initializes a new instance with its scene handlers configured.
+    /// </summary>
+    public GameEvents()
+    {
+        sceneLoadedHandler = (scene, _) => InvokeSceneLoadedEvent(scene);
+    }
+
     /// <summary>
     /// Called after persistent items reset.
     /// </summary>
@@ -84,17 +98,17 @@ public sealed class GameEvents
 
     private readonly Dictionary<string, List<Action<Scene>>> sceneEdits = [];
 
-    internal void Hook()
+    internal static void Hook(GameEvents events)
     {
-        SceneManager.sceneLoaded += InvokeSceneLoadedEvent;
+        SceneManager.sceneLoaded += events.sceneLoadedHandler;
     }
 
-    internal void Unhook()
+    internal static void Unhook(GameEvents events)
     {
-        SceneManager.sceneLoaded -= InvokeSceneLoadedEvent;
+        SceneManager.sceneLoaded -= events.sceneLoadedHandler;
     }
 
-    private void InvokeSceneLoadedEvent(Scene to, LoadSceneMode _)
+    private void InvokeSceneLoadedEvent(Scene to)
     {
         SceneLoadedEventArgs args = new SceneLoadedEventArgs(to);
         InvokeHelper.InvokeList(args, onNextSceneLoadedSubscribers);
@@ -104,29 +118,44 @@ public sealed class GameEvents
         }
     }
 
+    /// <summary>
+    /// Helper class that raises GameEvents on behalf of a specific profile.
+    /// </summary>
     public class Invoker
     {
         private readonly ItemChangerProfile profile;
         private readonly GameEvents events;
 
+        /// <summary>
+        /// Creates an invoker bound to the specified profile and event source.
+        /// </summary>
         internal Invoker(ItemChangerProfile profile, GameEvents events)
         {
             this.profile = profile;
             this.events = events;
         }
 
+        /// <summary>
+        /// Signals that persistent data has been updated.
+        /// </summary>
         public void NotifyPersistentUpdate()
         {
             profile.ResetPersistentItems(Persistence.Persistent);
             InvokeHelper.InvokeList(events.onPersistentUpdateSubscribers);
         }
 
+        /// <summary>
+        /// Signals that semi-persistent data has been updated.
+        /// </summary>
         public void NotifySemiPersistentUpdate()
         {
             profile.ResetPersistentItems(Persistence.SemiPersistent);
             InvokeHelper.InvokeList(events.onSemiPersistentUpdateSubscribers);
         }
 
+        /// <summary>
+        /// Signals that a scene transition is about to occur.
+        /// </summary>
         public void NotifyBeforeNextSceneLoaded(BeforeSceneLoadedEventArgs args) =>
             InvokeHelper.InvokeList(args, events.beforeNextSceneLoadedSubscribers);
     }

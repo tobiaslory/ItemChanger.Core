@@ -1,20 +1,24 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
-using System.IO;
-using System.Linq;
-using ItemChanger.Containers;
+﻿using ItemChanger.Containers;
 using ItemChanger.Enums;
 using ItemChanger.Events;
 using ItemChanger.Items;
+using ItemChanger.Logging;
 using ItemChanger.Modules;
 using ItemChanger.Placements;
 using ItemChanger.Serialization;
 using ItemChanger.Tags;
 using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.IO;
+using System.Linq;
 
 namespace ItemChanger;
 
+/// <summary>
+/// Represents a set of ItemChanger placements, modules, and hooks tied to a particular host.
+/// </summary>
 public class ItemChangerProfile : IDisposable
 {
     internal enum LoadState : uint
@@ -31,6 +35,9 @@ public class ItemChangerProfile : IDisposable
     [JsonProperty("Placements")]
     private readonly Dictionary<string, Placement> placements = [];
 
+    /// <summary>
+    /// Gets the set of modules that are part of this profile.
+    /// </summary>
     [JsonProperty]
     public ModuleCollection Modules { get; private init; } = [];
 
@@ -66,6 +73,7 @@ public class ItemChangerProfile : IDisposable
     /// <param name="stream">The stream to read from</param>
     /// <returns></returns>
     /// <exception cref="ArgumentException">The stream doesn't contain a profile.</exception>
+    /// <returns>The deserialized profile.</returns>
     public static ItemChangerProfile FromStream(ItemChangerHost host, Stream stream)
     {
         ItemChangerProfile? profile = SerializationHelper.DeserializeResource<ItemChangerProfile>(
@@ -84,17 +92,29 @@ public class ItemChangerProfile : IDisposable
     }
 
     /// <summary>
-    /// Ensures that the profile is unloaded and unhooked when garbage-collected
+    /// Ensures that the profile is unhooked when garbage-collected.
     /// </summary>
     ~ItemChangerProfile()
     {
-        Dispose();
+        Dispose(false);
     }
 
     private bool disposed;
 
     /// <inheritdoc/>
     public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Releases managed and unmanaged resources.
+    /// </summary>
+    /// <param name="disposing">
+    /// <see langword="true"/> when called from <see cref="Dispose()"/>; <see langword="false"/> from the finalizer.
+    /// </param>
+    protected virtual void Dispose(bool disposing)
     {
         if (disposed)
         {
@@ -105,9 +125,16 @@ public class ItemChangerProfile : IDisposable
         {
             Unload();
         }
-        DoUnhook();
-        host.ActiveProfile = null;
-        GC.SuppressFinalize(this);
+
+        if (host != null)
+        {
+            DoUnhook();
+            if (host.ActiveProfile == this)
+            {
+                host.ActiveProfile = null;
+            }
+        }
+
         disposed = true;
     }
 
@@ -120,10 +147,22 @@ public class ItemChangerProfile : IDisposable
         SerializationHelper.Serialize(stream, this);
     }
 
+    /// <summary>
+    /// Gets all placements currently registered with this profile.
+    /// </summary>
     public IEnumerable<Placement> GetPlacements() => placements.Values;
 
+    /// <summary>
+    /// Enumerates every item across all placements.
+    /// </summary>
     public IEnumerable<Item> GetItems() => placements.Values.SelectMany(x => x.Items);
 
+    /// <summary>
+    /// Retrieves a placement by name.
+    /// </summary>
+    /// <param name="name">Placement name.</param>
+    /// <returns>The requested placement.</returns>
+    /// <exception cref="KeyNotFoundException">Thrown when no placement with the given name exists.</exception>
     public Placement GetPlacement(string name)
     {
         if (!placements.TryGetValue(name, out Placement? placement))
@@ -133,11 +172,21 @@ public class ItemChangerProfile : IDisposable
         return placement;
     }
 
+    /// <summary>
+    /// Attempts to find a placement by name.
+    /// </summary>
+    /// <param name="name">Placement name.</param>
+    /// <param name="placement">Resolved placement when found.</param>
+    /// <returns><see langword="true"/> when the placement exists; otherwise <see langword="false"/>.</returns>
     public bool TryGetPlacement(string name, [NotNullWhen(true)] out Placement? placement)
     {
         return placements.TryGetValue(name, out placement);
     }
 
+    /// <summary>
+    /// Resets the obtained state on items that match the provided persistence category.
+    /// </summary>
+    /// <param name="persistence">Persistence type to refresh.</param>
     internal void ResetPersistentItems(Persistence persistence)
     {
         if (persistence == Persistence.NonPersistent)
@@ -160,6 +209,9 @@ public class ItemChangerProfile : IDisposable
         }
     }
 
+    /// <summary>
+    /// Loads modules and placements associated with this profile.
+    /// </summary>
     public void Load()
     {
         if (State != LoadState.Unloaded)
@@ -185,6 +237,9 @@ public class ItemChangerProfile : IDisposable
         State = LoadState.LoadCompleted;
     }
 
+    /// <summary>
+    /// Unloads modules and placements associated with this profile.
+    /// </summary>
     public void Unload()
     {
         if (State != LoadState.LoadCompleted)
@@ -208,68 +263,33 @@ public class ItemChangerProfile : IDisposable
         State = LoadState.Unloaded;
     }
 
+    /// <summary>
+    /// Adds a placement to the profile, optionally resolving naming conflicts.
+    /// </summary>
+    /// <param name="placement">Placement to add.</param>
+    /// <param name="conflictResolution">Conflict behavior when a placement with the same name exists.</param>
     public void AddPlacement(
         Placement placement,
         PlacementConflictResolution conflictResolution = PlacementConflictResolution.MergeKeepingNew
     )
     {
-        if (State == LoadState.PlacementsLoadStarted)
-        {
-            throw new InvalidOperationException(
-                "Cannot add a placement while placement loading is in progress"
-            );
-        }
+        EnsurePlacementMutationAllowed();
 
-        if (placements.TryGetValue(placement.Name, out Placement? existP))
-        {
-            switch (conflictResolution)
-            {
-                case PlacementConflictResolution.MergeKeepingNew:
-                    placement.Items.AddRange(existP.Items);
-                    placements[placement.Name] = placement;
-                    if (State >= LoadState.PlacementsLoadCompleted)
-                    {
-                        existP.Unload();
-                    }
-                    break;
-                case PlacementConflictResolution.MergeKeepingOld:
-                    existP.Items.AddRange(placement.Items);
-                    if (State >= LoadState.PlacementsLoadCompleted)
-                    {
-                        foreach (Item item in placement.Items)
-                        {
-                            item.LoadOnce();
-                        }
-                    }
-                    break;
-                case PlacementConflictResolution.Replace:
-                    placements[placement.Name] = placement;
-                    if (State >= LoadState.PlacementsLoadCompleted)
-                    {
-                        existP.Unload();
-                    }
-                    break;
-                case PlacementConflictResolution.Ignore:
-                    break;
-                case PlacementConflictResolution.Throw:
-                default:
-                    throw new ArgumentException(
-                        $"A placement named {placement.Name} already exists"
-                    );
-            }
-        }
-        else
-        {
-            placements.Add(placement.Name, placement);
-        }
+        bool placementActive = placements.TryGetValue(placement.Name, out Placement? existing)
+            ? HandleExistingPlacement(placement, existing, conflictResolution)
+            : AddBrandNewPlacement(placement);
 
-        // if the final placement ending up in the profile is the newly added one, it may need to be loaded to catch up.
-        if (State >= LoadState.PlacementsLoadCompleted && placements[placement.Name] == placement)
+        if (placementActive)
         {
-            placement.LoadOnce();
+            CatchUpPlacement(placement);
         }
     }
 
+    /// <summary>
+    /// Adds multiple placements.
+    /// </summary>
+    /// <param name="placements">Placements to add.</param>
+    /// <param name="conflictResolution">Conflict behavior when names collide.</param>
     public void AddPlacements(
         IEnumerable<Placement> placements,
         PlacementConflictResolution conflictResolution = PlacementConflictResolution.MergeKeepingNew
@@ -278,6 +298,89 @@ public class ItemChangerProfile : IDisposable
         foreach (Placement placement in placements)
         {
             AddPlacement(placement, conflictResolution);
+        }
+    }
+
+    private void EnsurePlacementMutationAllowed()
+    {
+        if (State == LoadState.PlacementsLoadStarted)
+        {
+            throw new InvalidOperationException(
+                "Cannot add a placement while placement loading is in progress"
+            );
+        }
+    }
+
+    private bool HandleExistingPlacement(
+        Placement newPlacement,
+        Placement existing,
+        PlacementConflictResolution resolution
+    )
+    {
+        return resolution switch
+        {
+            PlacementConflictResolution.MergeKeepingNew => MergeKeepingNew(newPlacement, existing),
+            PlacementConflictResolution.MergeKeepingOld => MergeKeepingOld(newPlacement, existing),
+            PlacementConflictResolution.Replace => ReplacePlacement(newPlacement, existing),
+            PlacementConflictResolution.Ignore => false,
+            PlacementConflictResolution.Throw => throw new ArgumentException(
+                $"A placement named {newPlacement.Name} already exists"
+            ),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(resolution),
+                resolution,
+                "Unknown conflict resolution mode."
+            ),
+        };
+    }
+
+    private bool AddBrandNewPlacement(Placement placement)
+    {
+        placements.Add(placement.Name, placement);
+        return true;
+    }
+
+    private bool MergeKeepingNew(Placement newPlacement, Placement existing)
+    {
+        newPlacement.Items.AddRange(existing.Items);
+        placements[newPlacement.Name] = newPlacement;
+        UnloadIfLoaded(existing);
+        return true;
+    }
+
+    private bool MergeKeepingOld(Placement newPlacement, Placement existing)
+    {
+        existing.Items.AddRange(newPlacement.Items);
+        if (State >= LoadState.PlacementsLoadCompleted)
+        {
+            foreach (Item item in newPlacement.Items)
+            {
+                item.LoadOnce();
+            }
+        }
+        return false;
+    }
+
+    private bool ReplacePlacement(Placement newPlacement, Placement existing)
+    {
+        placements[newPlacement.Name] = newPlacement;
+        UnloadIfLoaded(existing);
+        return true;
+    }
+
+    private void UnloadIfLoaded(Placement placement)
+    {
+        if (State >= LoadState.PlacementsLoadCompleted)
+        {
+            placement.Unload();
+        }
+    }
+
+    private void CatchUpPlacement(Placement placement)
+    {
+        if (State >= LoadState.PlacementsLoadCompleted && placements[placement.Name] == placement)
+        {
+            placement.LoadOnce();
         }
     }
 
@@ -297,11 +400,18 @@ public class ItemChangerProfile : IDisposable
             return;
         }
 
-        host.GameEvents.Hook();
+        GameEvents.Hook(host.GameEvents);
         host.PrepareEvents(lifecycleInvoker, gameInvoker);
         foreach (Container c in host.ContainerRegistry)
         {
-            c.Load();
+            try
+            {
+                c.Load();
+            }
+            catch (Exception e)
+            {
+                LoggerProxy.LogError($"Error loading container {c.Name}:\n{e}");
+            }
         }
 
         lifecycleInvoker.NotifyHooked();
@@ -318,10 +428,17 @@ public class ItemChangerProfile : IDisposable
 
         foreach (Container c in host.ContainerRegistry)
         {
-            c.Unload();
+            try
+            {
+                c.Unload();
+            }
+            catch (Exception e)
+            {
+                LoggerProxy.LogError($"Error unloading container {c.Name}:\n{e}");
+            }
         }
         host.UnhookEvents(lifecycleInvoker, gameInvoker);
-        host.GameEvents.Unhook();
+        GameEvents.Unhook(host.GameEvents);
 
         lifecycleInvoker.NotifyUnhooked();
 
