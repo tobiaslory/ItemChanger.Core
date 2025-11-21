@@ -18,6 +18,9 @@ public abstract class Module
     [JsonIgnore]
     public bool Loaded { get; private set; }
 
+    /// <summary>
+    /// Human-readable name for the module, defaulting to the type name.
+    /// </summary>
     public string Name => GetType().Name;
 
     /// <summary>
@@ -72,5 +75,5 @@ public abstract class Module
     /// Additional information for serialization and other tag handling purposes.
     /// </summary>
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-    public virtual ModuleHandlingFlags ModuleHandlingProperties { get; set; }
+    public virtual ModuleHandlingOptions ModuleHandlingProperties { get; set; }
 }

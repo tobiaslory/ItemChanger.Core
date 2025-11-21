@@ -58,10 +58,20 @@ public class IntComparisonBool(
 /// IBool which searches for a placement by name and checks whether all items on the placement are obtained.
 /// <br/>If the placement does not exist, defaults to the value of missingPlacementTest, or true if missingPlacementTest is null.
 /// </summary>
+/// <summary>
+/// IBool that reports true once all items in the given placement are obtained.
+/// </summary>
 public class PlacementAllObtainedBool(string placementName, IBool? missingPlacementTest = null)
     : IBool
 {
+    /// <summary>
+    /// Name of the placement whose items should be monitored.
+    /// </summary>
     public string PlacementName => placementName;
+
+    /// <summary>
+    /// Optional test that determines the fallback value when the placement cannot be found.
+    /// </summary>
     public IBool? MissingPlacementTest => missingPlacementTest;
 
     /// <inheritdoc/>
@@ -89,21 +99,31 @@ public class PlacementAllObtainedBool(string placementName, IBool? missingPlacem
 /// IBool which searches for a placement by name and checks whether its VisitState includes specified flags.
 /// <br/>If the placement does not exist, defaults to the value of missingPlacementTest, or true if missingPlacementTest is null.
 /// </summary>
+/// <summary>
+/// IBool that checks whether a placement has reached specific visit-state flags.
+/// </summary>
 public class PlacementVisitStateBool(
     string placementName,
-    VisitState requiredFlags,
+    VisitStates requiredFlags,
     IBool? missingPlacementTest
 ) : IBool
 {
+    /// <summary>
+    /// Name of the placement whose visit state should be inspected.
+    /// </summary>
     public string PlacementName => placementName;
-    public VisitState RequiredFlags => requiredFlags;
+
+    /// <summary>
+    /// Flags that must be present on the placement's visit state.
+    /// </summary>
+    public VisitStates RequiredFlags => requiredFlags;
 
     /// <summary>
     /// If true, requires any flag in requiredFlags to be contained in the VisitState. If false, requires all flags in requiredFlags to be contained in VisitState. Defaults to false.
     /// </summary>
     public bool RequireAny { get; }
 
-    private IBool? missingPlacementTest = missingPlacementTest;
+    private readonly IBool? missingPlacementTest = missingPlacementTest;
 
     /// <summary>
     /// An optional test to use if the placement is not found.
@@ -133,18 +153,30 @@ public class PlacementVisitStateBool(
     }
 }
 
+/// <summary>
+/// Composite IBool that returns true when any child evaluates to true.
+/// </summary>
 public class Disjunction : IBool
 {
     [JsonProperty("Bools")]
     private readonly List<IBool> bools = [];
 
+    /// <summary>
+    /// Creates an empty disjunction.
+    /// </summary>
     public Disjunction() { }
 
+    /// <summary>
+    /// Creates a disjunction from the provided bools.
+    /// </summary>
     public Disjunction(IEnumerable<IBool> bools)
     {
         this.bools.AddRange(bools);
     }
 
+    /// <summary>
+    /// Creates a disjunction from the provided bool params.
+    /// </summary>
     public Disjunction(params IBool[] bools)
     {
         this.bools.AddRange(bools);
@@ -154,22 +186,37 @@ public class Disjunction : IBool
     [JsonIgnore]
     public bool Value => bools.Any(b => b.Value);
 
+    /// <summary>
+    /// Produces a new disjunction containing the existing bools plus the provided one.
+    /// </summary>
     public Disjunction OrWith(IBool b) =>
         b is Disjunction d ? new([.. bools, .. d.bools]) : new([.. bools, b]);
 }
 
+/// <summary>
+/// Composite IBool that returns true only when every child evaluates to true.
+/// </summary>
 public class Conjunction : IBool
 {
     [JsonProperty("Bools")]
     private readonly List<IBool> bools = [];
 
+    /// <summary>
+    /// Creates an empty conjunction.
+    /// </summary>
     public Conjunction() { }
 
+    /// <summary>
+    /// Creates a conjunction from the provided bools.
+    /// </summary>
     public Conjunction(IEnumerable<IBool> bools)
     {
         this.bools.AddRange(bools);
     }
 
+    /// <summary>
+    /// Creates a conjunction from the provided bool params.
+    /// </summary>
     public Conjunction(params IBool[] bools)
     {
         this.bools.AddRange(bools);
@@ -179,13 +226,22 @@ public class Conjunction : IBool
     [JsonIgnore]
     public bool Value => bools.All(b => b.Value);
 
+    /// <summary>
+    /// Produces a new conjunction containing the existing bools plus the provided one.
+    /// </summary>
     public Conjunction AndWith(IBool b) =>
         b is Conjunction c ? new([.. bools, .. c.bools]) : new([.. bools, b]);
 }
 
+/// <summary>
+/// IBool that negates the result of the wrapped bool.
+/// </summary>
 [method: JsonConstructor]
 public class Negation(IBool @bool) : IBool
 {
+    /// <summary>
+    /// Wrapped bool whose result is negated.
+    /// </summary>
     public IBool Bool => @bool;
 
     /// <inheritdoc/>

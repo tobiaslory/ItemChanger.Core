@@ -10,7 +10,7 @@ namespace ItemChanger.Locations;
 /// </summary>
 public class StartLocation : AutoLocation
 {
-    public MessageType MessageType { get; init; }
+    public MessageTypes MessageType { get; init; }
 
     protected override void DoLoad()
     {
