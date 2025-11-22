@@ -20,7 +20,7 @@ public class ReadOnlyGiveEventArgs(
     public string? Container => info.Container;
     public FlingType Fling => info.FlingType;
     public Transform? Transform => info.Transform;
-    public MessageType MessageType => info.MessageType;
+    public MessageTypes MessageType => info.MessageType;
     public Action<Item>? Callback => info.Callback;
     public ObtainState OriginalState => state;
 }

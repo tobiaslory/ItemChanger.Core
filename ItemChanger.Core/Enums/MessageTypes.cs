@@ -6,7 +6,7 @@ namespace ItemChanger.Enums;
 /// Enum used to communicate compatibility with different UIDef types.
 /// </summary>
 [Flags]
-public enum MessageType
+public enum MessageTypes
 {
     None = 0,
 

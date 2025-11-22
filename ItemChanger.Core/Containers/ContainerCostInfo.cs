@@ -8,9 +8,6 @@ namespace ItemChanger.Containers;
 /// <summary>
 /// Instructions for a container to enforce a Cost.
 /// </summary>
-/// <summary>
-/// Instructions for a container to enforce a Cost.
-/// </summary>
 public class ContainerCostInfo
 {
     /// <summary>

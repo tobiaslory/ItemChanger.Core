@@ -8,9 +8,6 @@ namespace ItemChanger.Containers;
 /// <summary>
 /// Instructions for a container to give items.
 /// </summary>
-/// <summary>
-/// Instructions for a container to give items.
-/// </summary>
 public class ContainerGiveInfo
 {
     /// <summary>
